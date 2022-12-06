@@ -13,3 +13,22 @@ This repo contains all materials for the tutorial. It is organized as follows:
 - `slides/`: folder containing slides presented during the tutorial.
 
 The rendered Rmarkdown HTML document can be viewed [here](https://www.andrea-rau.com/2022_DIGIT-BIO_workshop/).
+
+To install the packages needed to run the tutorial, execute the following R code (~15 min of installation time):
+
+```
+install.packages("BiocManager")
+BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2",
+                       "coseq", "clusterProfiler", "org.Mm.eg.db"))
+```
+
+In some cases, installation of the `clusterProfiler` package may cause
+errors due to a dependence on the `r Biocpkg("ggtree")` package (see [here](https://github.com/YuLab-SMU/ggtree/issues/544). 
+In this case, you can try
+using the following code to install the development version of `ggtree`
+before installing the remaining packages as described above.
+
+```
+install.packages("remotes")
+remotes::install_github('YuLab-SMU/ggtree')
+```
