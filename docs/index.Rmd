@@ -1,86 +1,377 @@
 ---
-title: "Vignette Title"
+title: "Do my clusters make sense? Some statistical and biological clues to help..."
+subtitle: "DIGIT-BIO tutorial @ Ecully"
+date: 8 December 2022
 author:
 - name: Andrea Rau
-  affiliation: andrea.rau@inrae.fr
-date: 8 December 2022
+  affiliation: andrea.rau@inrae.fr, https://andrea-rau.com
 output:
   BiocStyle::html_document:
     toc: yes
-    toc_float: yes
 abstract: |
-  Description of tutorial...
-
+  Unsupervised classification (clustering) is used in many [fields](https://digitbio-ia.github.io/sequences/concepts/s2_clustering). But once a clustering result has been obtained, how can we evaluate its pertinence? In this work, we will work with several statistical and biological indices to reinforce our confidence (or not...) in a clustering result. We will use as an example the identification of co-expressed genes from transcriptomic data with finite mixture models. 
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# knitr::purl("2022_DIGIT-BIO-atelier.Rmd")
+```
 
 # Getting started
 
-To enable the _Bioconductor_ style in your R Markdown vignette you need to include the following in the `DESCRIPTION` file:
-
-    VignetteBuilder: knitr
-    Suggests: BiocStyle, knitr, rmarkdown
-
-
-# Style macros
-
-_BiocStyle_ introduces the following macros for referring to _R_ packages:
-
-* `r Biocpkg("IRanges")`, for _Bioconductor_ software, annotation and experiment data packages,
-* `r CRANpkg("data.table")`, for _R_ packages available on CRAN,
-* `r Githubpkg("rstudio/rmarkdown")`, for _R_ packages available on GitHub,
-* `r Rpackage("MyPkg")`, for _R_ packages that are _not_ available on _Bioconductor_, CRAN or GitHub.
-
-
-# Figures
-
-Assign captions to figures in the code chunk option `fig.cap` to automatically number them, and to be able to reference them, see Figure \@ref(fig:plot). The figure label is generated from the code chunk label by prefixing it with `fig:`.
-
-```{r plot, fig.cap="Regular figure. The first sentence of the figure caption is automatically emphasized to serve as figure title.", echo=FALSE}
-plot(cars)
+We will first begin by installing the necessary packages for this tutorial:
+```{r, eval = FALSE}
+install.packages("BiocManager")
+BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2",
+                       "coseq", "clusterProfiler", "org.Mm.eg.db"))
 ```
 
-Small and wide figures can be specified by `fig.small` and `fig.wide` code chunk options.
+In some cases, installation of the `r Biocpkg("clusterProfiler")` package may cause
+errors due to a dependence on the `r Biocpkg("ggtree")` package (see [here](https://github.com/YuLab-SMU/ggtree/issues/544). In this case, you can try
+using the following code to install the development version of `r Biocpkg("ggtree")`
+before installing the remaining packages as described above.
 
-```{r small, fig.cap="Small figure. A plot produced by a code chunk with option `fig.small = TRUE`.", fig.small=TRUE, echo=FALSE}
-plot(cars)
+```{r, eval=FALSE}
+install.packages("remotes")
+remotes::install_github('YuLab-SMU/ggtree')
 ```
 
-```{r wide, fig.cap="Wide figure. A plot produced by a code chunk with option `fig.wide = TRUE`.", fig.wide=TRUE, echo=FALSE}
-plot(cars)
+Installation of all packages should take ~15 min.
+
+# Load packages and pre-formatted results
+
+Next, we load all packages for the tutorial.
+
+```{r, warning=FALSE, message=FALSE}
+library(clValid)
+library(fpc)
+library(mclust)
+library(coseq)
+library(ggplot2)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+```
+
+In this tutorial, we will make use of data from ... TODO. Raw counts were downloaded, pre-processed. Next, a differential analysis was conducted using  `r Biocpkg("DESeq2")`, and two co-expression analyses were performed on arcsine-transformed RNA-seq profiles using `r Biocpkg("coseq")`: 
+
+1. Gaussian mixture models (GMM), using 20 independent runs over a range of cluster values from $K$=2, ..., 20, with the best performer selected using the ICL criterion.
+2. K-means algorithm over a range of cluster values from $K$=2, ..., 20, with the best performer selected using the slope heuristics criterion.
+
+Code to regenerate these results can be found in the Appendix. For the purposes of this tutorial, all necessary code can be found on the associated 
+[GitHub repo](https://github.com/andreamrau/2022_DIGIT-BIO_workshop) and can be downloaded as follows:
+
+```{r, eval=FALSE}
+for(i in c("Fu-GSE60450_dds.rds", "coexp_gmm.rds", "coexp_km.rds")) {
+  FileURL <- paste0("https://github.com/andreamrau/",
+                    "2022_DIGIT-BIO_workshop/tree/main/data/", i)
+  download.file(FileURL, i)
+}
+```
+
+We then load these results below, and set the seed for the random number generator to ensure reproducible results:
+
+```{r}
+dds <- readRDS("Fu-GSE60450_dds.rds")
+coexp_gmm <- readRDS("coexp_gmm.rds")
+coexp_km <- readRDS("coexp_km.rds")
+set.seed(12345)
 ```
 
 
-# Equations
+# Examine `r Biocpkg("coseq")` clustering results
 
-To number and reference equations, put them in equation environments and assign labels to them, see Equation \@ref(eq:binom).
+We first briefly examine the results for the GMM and k-means `r Biocpkg("coseq")` clusterings.
 
-\begin{equation}
-  f\left(k\right) = \binom{n}{k} p^k\left(1-p\right)^{n-k}
-  (\#eq:binom)
-\end{equation}
+```{r}
+coexp_gmm
+plot(coexp_gmm, conds = dds$Status,
+     collapse_reps = "average", graph = "boxplots")
+plot(coexp_gmm, graphs = "probapost_boxplots")
+```
+
+```{r}
+coexp_km
+plot(coexp_km, conds = dds$Status,
+     collapse_reps = "average", graph = "boxplots")
+coseq::plot(coexp_km, graphs = "probapost_boxplots")
+```
+
+# Internal validation
+
+## Silhouette width 
+
+Observations with a large silhouette width s_i are well clustered
+Small S_i (near 0) => observation lies between two clusters
+Observations with a negative S_i may be in the wrong cluster.
+
+For GMM.
+
+```{r, cache=TRUE}
+sil_gmm <- cluster::silhouette(clusters(coexp_gmm), dist(tcounts(coexp_gmm)))
+summary(sil_gmm)
+sil_df_gmm <- data.frame(as(sil_gmm, "matrix"))
+sil_df_gmm$Cluster <- factor(sil_df_gmm$cluster)
+sil_df_gmm <- sil_df_gmm[order(sil_df_gmm$cluster, sil_df_gmm$sil_width),]
+ggplot(sil_df_gmm) +
+  geom_col(aes(x=1:nrow(sil_df_gmm), y=sil_width, fill = Cluster)) + 
+  ylab("Silhouette width") + 
+  theme_bw() +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+Same thing for K-means.
+
+```{r, cache=TRUE}
+sil_km <- cluster::silhouette(clusters(coexp_km), dist(tcounts(coexp_km)))
+summary(sil_km)
+sil_df_km <- data.frame(as(sil_km, "matrix"))
+sil_df_km$Cluster <- factor(sil_df_km$cluster)
+sil_df_km <- sil_df_km[order(sil_df_km$cluster, sil_df_km$sil_width),]
+ggplot(sil_df_km) +
+  geom_col(aes(x=1:nrow(sil_df_km), y=sil_width, fill = Cluster)) + 
+  ylab("Silhouette width") + 
+  theme_bw() +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+Which clusters appear to be the best formed? Which are the fuzziest?
+
+## Dunn index
+
+```{r, cache=TRUE}
+coexp_gmm_dunn <- cluster.stats(d = dist(tcounts(coexp_gmm)), 
+                             clusters(coexp_gmm))$dunn
+coexp_km_dunn <- cluster.stats(d = dist(tcounts(coexp_km)), 
+                                clusters(coexp_km))$dunn
+cat("DI (GMM) =", coexp_gmm_dunn, "\nDI (K-means) =", coexp_km_dunn, "\n")
+```
 
 
-# Tables
+# Stability validation
 
-Like figures, tables with captions will also be numbered and can be referenced, see Table \@ref(tab:table).
+## `r CRANpkg("clValid")`: removing each column one by one
 
-Fruit   | Price
-------- | -----
-bananas | 1.2
-apples  | 1.0
-oranges | 2.5
+Removing each column one by one + re-run clustering, several metrics
+GMM.
 
-: (\#tab:table) A simple table. With caption.
+```{r, cache=TRUE}
+coexp_gmm_stability <- 
+  clValid(as.matrix(tcounts(coexp_gmm)), 
+          nClust=max(clusters(coexp_gmm)), maxitems = nrow(coexp_gmm),
+          clMethods = "model",
+          validation = "stability")
+summary(coexp_gmm_stability)
+```
+
+Same thing for K-means.
+
+```{r, cache=TRUE}
+coexp_km_stability <- 
+  clValid(as.matrix(tcounts(coexp_km)), 
+          nClust=max(clusters(coexp_km)), maxitems = nrow(coexp_km),
+          clMethods = "kmeans",
+          validation = "stability")
+summary(coexp_km_stability)
+```
 
 
-# Cross-references
+## `r CRANpkg("fpc")`: bootstrap resampling of data 
 
-Apart from referencing figures (Section \@ref(figures)), tables (Section \@ref(tables)), and equations (Section \@ref(equations)), you can also use the same syntax to refer to sections by their default labels generated by pandoc.
+Bootstrap resamples of data + calculate Jaccard index
+Generally, a valid, stable cluster should yield a mean Jaccard similarity 
+value of 0.75 or more. 
+=> Minimize clusterwise Jaccard bootstrap mean & number of dissolved clusters
+=> Maximize number of recovered clusters (close to B)
+
+GMM
+
+```{r, cache=TRUE}
+coexp_gmm_boot <- 
+  clusterboot(tcounts(coexp_gmm), B=20, k=max(clusters(coexp_gmm)), 
+              seed=20,bootmethod="boot",
+              clustermethod=noisemclustCBI)
+print(coexp_gmm_boot)
+```
+
+Same thing for K-means.
+
+```{r, cache=TRUE}
+coexp_km_boot <- 
+  clusterboot(tcounts(coexp_km), B=20, k=max(clusters(coexp_km)), 
+              seed=20,bootmethod="boot",
+              clustermethod=kmeansCBI)
+print(coexp_km_boot)
+```
 
 
-# Side notes
 
-Footnotes are displayed as side notes on the right margin^[this is a side note entered as a footnote], which has the advantage that they appear close to the place where they are defined.
+# External validation
+
+## Adjusted Rand Index
+Can be used to compare two partitions, or compare to known labels
+
+```{r, cache=TRUE}
+adjustedRandIndex(clusters(coexp_gmm), clusters(coexp_km))
+
+chr_info <- rowData(dds)[match(rownames(coexp_gmm), 
+                               rownames(rowData(dds))),"TXCHROM"]
+table(chr_info)
+adjustedRandIndex(clusters(coexp_gmm), chr_info)
+adjustedRandIndex(clusters(coexp_km), chr_info)
+```
+
+## BHI and BSI
+
+```{r, cache=TRUE}
+coexp_gmm_bio <- clValid(as.matrix(tcounts(coexp_gmm)), 
+                        nClust = max(clusters(coexp_gmm)),
+                        maxitems = nrow(coexp_gmm),
+                        clMethods = c("model"),
+                        validation = c("biological"),
+                        annotation = "org.Mm.eg.db", 
+                        GOcategory = "BP")
+```
+
+```{r, cache=TRUE}
+coexp_km_bio <- clValid(as.matrix(tcounts(coexp_km)), 
+                       nClust = max(clusters(coexp_km)),
+                       maxitems = nrow(coexp_km),
+                       clMethods = c("kmeans"),
+                       validation = c("biological"),
+                       annotation = "org.Mm.eg.db", 
+                       GOcategory = "BP")
+```
+
+```{r, cache=TRUE}
+optimalScores(coexp_gmm_bio)
+optimalScores(coexp_km_bio)
+
+```
+
+
+## GO enrichment analysis
+
+```{r, cache=TRUE}
+cl <- coexp_gmm
+kchoose <- 10
+ego <- enrichGO(gene = rownames(cl)[which(clusters(cl) == kchoose)],
+                universe = rownames(cl),
+                OrgDb = org.Mm.eg.db,
+                ont = "BP")
+```
+
+```{r, fig.height = 10}
+dotplot(ego, showCategory=15)
+```
+
+
+```{r, warning=FALSE}
+head(summary(ego))
+```
+
+# Last remarks
+
+How to interpret measures of cluster validity? (compare to results 
+from different clusterings, or from random data)
+
+
+# Going further ...
+
+Create random data and compare results to those seen here ...
+Other clustering algorithms ...
+Consensus clusters ...
+
+# Appendix: Creating initial data files
+
+The differential and co-expression analysis results that were loaded in the 
+first step of this tutorial were generated with the following code:
+
+```{r, eval=FALSE}
+library(RnaSeqGeneEdgeRQL)
+library(DESeq2)
+library(Mus.musculus) 
+
+ 
+## Read in targets file --------------------------------------------------------
+targetsFile <- 
+  system.file("extdata", "targets.txt", package="RnaSeqGeneEdgeRQL")
+targets <- read.delim(targetsFile, stringsAsFactors=FALSE)
+targets$ID <- rownames(targets)
+targets$Status <- factor(targets$Status, 
+                         levels = c("virgin", "pregnant", "lactating"))
+targets
+
+
+## Download gene-wise read counts from NCBI ------------------------------------
+FileURL <- paste(
+     "http://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE60450",
+     "format=file",
+     "file=GSE60450_Lactation-GenewiseCounts.txt.gz",
+     sep="&")
+download.file(FileURL, "GSE60450_Lactation-GenewiseCounts.txt.gz")
+
+GenewiseCounts <- 
+  read.delim("GSE60450_Lactation-GenewiseCounts.txt.gz",
+             row.names="EntrezGeneID")
+colnames(GenewiseCounts) <- substring(colnames(GenewiseCounts),1,7)
+counts <- GenewiseCounts[,-1] ## First column is gene lengths
+counts <- counts[-which(rowSums(counts) == 0),]
+
+dim(counts)
+head(counts)
+
+
+## Gene names ------------------------------------------------------------------
+geneid <- rownames(counts) 
+genes <- select(Mus.musculus, keys=geneid, columns=c("SYMBOL", "TXCHROM"), 
+                keytype="ENTREZID")
+## Remove multi-mapped genes
+genes <- genes[!duplicated(genes$ENTREZID),]
+all.equal(unlist(genes$ENTREZID), rownames(counts))
+dim(genes)
+head(genes)
+
+
+## Differential analysis to screen DE genes ------------------------------------
+dds <- DESeqDataSetFromMatrix(counts, targets, design = ~ Status)
+rowData(dds) <- genes
+## Remove weakly expressed genes
+keep <- rowSums(counts(dds) >= 20) >= 2
+dds <- dds[keep,]
+## Remove genes missing a symbol or chromosome
+keep2 <- which(rowSums(is.na(rowData(dds))) == 0)
+dds <- dds[keep2,]
+dds <- DESeq(dds, test="LRT", reduced = ~1)
+res <- results(dds, alpha = 0.05)
+hist(res$pvalue, breaks = 50, main = "Raw p-values")
+
+
+## Run coseq for co-expression analysis ----------------------------------------
+coexp_gmm_all <- vector("list", length = 20)
+for(i in 1:20) {
+    coexp_gmm_all[[i]] <- coseq(dds, alpha = 0.05, K = 2:20, 
+                                model = "Normal", transformation = "arcsin")
+}
+ICL_all <- unlist(lapply(coexp_gmm_all, function(x) min(ICL(x))))
+best_gmm_result <- which.min(ICL_all)
+coexp_gmm <- coexp_gmm_all[[best_gmm_result]]
+
+coexp_km <- coseq(dds, alpha = 0.05, K = 2:20, seed=12345,
+                  model = "kmeans", transformation = "arcsin")
+
+## Save DE and coseq results ---------------------------------------------------
+saveRDS(dds, file = "Fu-GSE60450_dds.rds")
+saveRDS(coexp_gmm, file = "coexp_gmm.rds")
+saveRDS(coexp_km, file = "coexp_km.rds")
+```
+
+These steps were hugely inspired by the workflows found in the 
+[RnaSeqGeneEdgeRQL vignette]( https://bioconductor.org/packages/release/workflows/vignettes/RnaSeqGeneEdgeRQL/inst/doc/edgeRQL.html) and in a [F1000 Software Tool article](https://f1000research.com/articles/5-1408).
+
 
 
 # Session info {.unnumbered}
