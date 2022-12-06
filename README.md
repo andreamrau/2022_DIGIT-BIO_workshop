@@ -1,2 +1,3 @@
-# 2022_DIGIT-BIO_workshop
-2022 DIGIT BIO workshop materials: "Do my clusters make sense? Some statistical and biological clues to help..."
+# DIGIT-BIO workshop: "Do my clusters make sense? Some statistical and biological clues to help..."
+
+<img src="digitbio_logo.png" align="center" />
