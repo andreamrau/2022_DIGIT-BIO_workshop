@@ -9,7 +9,7 @@ output:
   BiocStyle::html_document:
     toc: yes
 abstract: |
-  Unsupervised classification (clustering) is used in many [fields](https://digitbio-ia.github.io/sequences/concepts/s2_clustering). But once a clustering result has been obtained, how can we evaluate its pertinence? In this work, we will work with several statistical and biological indices to reinforce our confidence (or not...) in a clustering result. We will use as an example the identification of co-expressed genes from transcriptomic data with finite mixture models. 
+  [Unsupervised classification (clustering)](https://digitbio-ia.github.io/sequences/concepts/s2_clustering) is used in many fields. But once a clustering result has been obtained, how can we evaluate its pertinence? In this work, we will work with several statistical and biological indices to reinforce our confidence (or not...) in a clustering result. We will use as an example the identification of co-expressed genes from transcriptomic data with finite mixture models. 
 ---
 
 ```{r setup, include=FALSE}
@@ -27,7 +27,7 @@ BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2",
 ```
 
 In some cases, installation of the `r Biocpkg("clusterProfiler")` package may cause
-errors due to a dependence on the `r Biocpkg("ggtree")` package (see [here](https://github.com/YuLab-SMU/ggtree/issues/544). In this case, you can try
+errors due to a dependence on the `r Biocpkg("ggtree")` package (see [here](https://github.com/YuLab-SMU/ggtree/issues/544)). In this case, you can try
 using the following code to install the development version of `r Biocpkg("ggtree")`
 before installing the remaining packages as described above.
 
@@ -36,29 +36,55 @@ install.packages("remotes")
 remotes::install_github('YuLab-SMU/ggtree')
 ```
 
-Installation of all packages should take ~15 min.
+Installation of all packages should take approximatey ~15 min.
 
 # Load packages and pre-formatted results
 
 Next, we load all packages for the tutorial.
 
 ```{r, warning=FALSE, message=FALSE}
-library(clValid)
-library(fpc)
-library(mclust)
-library(coseq)
-library(ggplot2)
-library(clusterProfiler)
-library(org.Mm.eg.db)
+library(clValid)          ## Package with several validation criteria
+library(fpc)              ## Package with several validation criteria
+library(mclust)           ## Package to fit Gaussian mixture models
+library(coseq)            ## Co-expression analyses
+library(ggplot2)          ## Plotting 
+library(clusterProfiler)  ## GO enrichment analysis
+library(org.Mm.eg.db)     ## Mouse annotation
 ```
 
-In this tutorial, we will make use of data from ... TODO. Raw counts were downloaded, pre-processed. Next, a differential analysis was conducted using  `r Biocpkg("DESeq2")`, and two co-expression analyses were performed on arcsine-transformed RNA-seq profiles using `r Biocpkg("coseq")`: 
+In this tutorial, we will make use of data from an RNA-seq experiment to study 
+lineage of luminal cells in mouse mammary gland and changes in expression upon 
+pregnancy and lactation ([Fu et al., 2015](https://pubmed.ncbi.nlm.nih.gov/25730472/)). The study included 2 cell types 
+{basal stem-cell enriched cells, committed luminal cells} × 3 statuses {virgin, 
+pregnant, lactating} × 2 biological replicates. Illumina HiSeq was used to 
+produce 30 million 100bp SE reads. Pre-processing steps included alignment of 
+reads to the mm10 genome with *Subread* and quantification of Entrez genes 
+(RefSeq) using *featureCounts*. Further details about the study and these
+pre-processing steps can be found 
+[here](https://bioconductor.org/packages/release/workflows/vignettes/RnaSeqGeneEdgeRQL/inst/doc/edgeRQL.html)).
 
-1. Gaussian mixture models (GMM), using 20 independent runs over a range of cluster values from $K$=2, ..., 20, with the best performer selected using the ICL criterion.
-2. K-means algorithm over a range of cluster values from $K$=2, ..., 20, with the best performer selected using the slope heuristics criterion.
+Prior to this tutorial, raw counts from the study were downloaded and subjected
+to an initial analysis. Specifically, (1) genes with weak expression or 
+ambiguous/missing IDs were filtered from the analysis, and `r Biocpkg("DESeq2")`
+was used to perform library size normalization; (2) a differential analysis to
+identify genes with significantly differentially expression in at least one 
+status group (results are saved in an RDS object called `Fu-GSE60450_dds.rds`); 
+and (3) two co-expression analyses were performed on 
+arcsine-transformed RNA-seq profiles using `r Biocpkg("coseq")`:
 
-Code to regenerate these results can be found in the Appendix. For the purposes of this tutorial, all necessary code can be found on the associated 
-[GitHub repo](https://github.com/andreamrau/2022_DIGIT-BIO_workshop) and can be downloaded as follows:
+1. **Gaussian mixture models** (GMM), using 20 independent runs over a range of 
+cluster values from $K$=2, ..., 20, with the best performer selected using the 
+ICL criterion. Results are saved in an RDS object called `coexp_gmm.rds`.
+2. **K-means** algorithm over a range of cluster values from $K$=2, ..., 20, 
+with the best performer selected using the slope heuristics criterion. 
+Results are saved in an RDS object called `coexp_km.rds`.
+
+We will examine a variety of cluster validation metrics on these two clustering
+results in the following tutorial. Note that code to regenerate these results 
+can be found in the Appendix. For the purposes of this tutorial, all necessary 
+pre-processed data files can be found on the associated 
+[GitHub repo](https://github.com/andreamrau/2022_DIGIT-BIO_workshop) and can be 
+downloaded as follows:
 
 ```{r, eval=FALSE}
 for(i in c("Fu-GSE60450_dds.rds", "coexp_gmm.rds", "coexp_km.rds")) {
@@ -68,7 +94,8 @@ for(i in c("Fu-GSE60450_dds.rds", "coexp_gmm.rds", "coexp_km.rds")) {
 }
 ```
 
-We then load these results below, and set the seed for the random number generator to ensure reproducible results:
+We then load these results below, and set the seed for the random number 
+generator to ensure reproducible results:
 
 ```{r}
 dds <- readRDS("Fu-GSE60450_dds.rds")
@@ -80,7 +107,17 @@ set.seed(12345)
 
 # Examine `r Biocpkg("coseq")` clustering results
 
-We first briefly examine the results for the GMM and k-means `r Biocpkg("coseq")` clusterings.
+We first briefly examine the results for the two
+`r Biocpkg("coseq")` clustering results. We start with the GMM results,
+and examine boxplots of the co-expression clusters (with results 
+aggegated by status group in the visualization) as well as the conditional 
+probabilities of cluster membership for each cluster. Note that clusters that
+have very sharp, marked profiles (e.g. Cluster 10) tend to include genes
+with higher conditional probabilities. Genes assigned to clusters with less
+marked profiles (e.g., Cluster 1 or 3) likely have a more ambiguous 
+clustering assignment, which is reflected by the larger range of values for
+the respective conditional probabilities.
+
 
 ```{r}
 coexp_gmm
@@ -89,22 +126,54 @@ plot(coexp_gmm, conds = dds$Status,
 plot(coexp_gmm, graphs = "probapost_boxplots")
 ```
 
+We similarly examine results from the K-means algorithm. Note that clustering
+labels are arbitrary, so Cluster 1 from the GMM does not have any link to
+Cluster 1 from K-means. By exploiting the relationship between the K-means
+algorithm and a special case of the GMM (notably, spherical GMMs with
+estimation via the CEM algorithm), we can similarly calculate conditional
+probabilities of cluster assignment analagous to those seen above.
+
 ```{r}
 coexp_km
 plot(coexp_km, conds = dds$Status,
      collapse_reps = "average", graph = "boxplots")
-coseq::plot(coexp_km, graphs = "probapost_boxplots")
+plot(coexp_km, graphs = "probapost_boxplots")
 ```
 
 # Internal validation
 
+Internal cluster validation seeks to evaluate the goodness of clustering 
+structure using data alone. In other words, we aim to evaluate the 
+extent to which genes with a given cluster are similar, as well as the extent to 
+which genes in different clusters are distinct. Measures of internal validation
+are typically defined using measures of (1) *compactness*, 
+(2) *connectivity*, and/or (3) *separation*.
+
+In this section, we will examine two criteria for internal cluster validation:
+the Silhouette width, and the Dunn index. For each of these, note that we make
+use of the transformed normalized counts produced internally for clustering
+by `r Biocpkg("coseq")`, accessible using `tcounts(coexp_gmm)`, rather than the raw counts.
+
 ## Silhouette width 
 
-Observations with a large silhouette width s_i are well clustered
-Small S_i (near 0) => observation lies between two clusters
-Observations with a negative S_i may be in the wrong cluster.
+The silhouette statistic is a measure of how closely data within a cluster is
+matched (compactness) and how loosely it is matched to neighboring
+clusters (separation). It is defined as follows:
 
-For GMM.
+\[ a(i) = \frac{1}{\vert C_I \vert - 1}\sum_{j\in C_I, i \ne j} d(i,j) \text{ and } b(i) = \min_{J\ne I} \frac{1}{\vert C_J \vert}\sum_{j\in C_J} d(i,j)  \textsf{, for } i \in C_I\]
+
+\[ s(i) = \frac{b(i)-a(i)}{\max \lbrace a(i), b(i) \rbrace} \]
+
+The silhouette width can take values from -1 to 1. **Observations (genes) with a large silhouette width are typically considered to be well clustered**, 
+while values close to 0 may indicate that an 
+observation lies between two clusters. Observations with a negative $s_i$ 
+may be assigned to an incorrect cluster. 
+
+The results for the GMM clustering are shown below. In the graphic, genes
+are plotted on the x-axis, and $s_i$ values on the y-axis, with different
+colors representing each cluster. Which clusters appear to be the best formed? 
+Which are the fuzziest?
+
 
 ```{r, cache=TRUE}
 sil_gmm <- cluster::silhouette(clusters(coexp_gmm), dist(tcounts(coexp_gmm)))
@@ -121,7 +190,14 @@ ggplot(sil_df_gmm) +
         axis.ticks.x=element_blank())
 ```
 
-Same thing for K-means.
+We now examine the same results for the K-means results. What do you notice?
+
+One thing to keep in mind is that the
+silhouette statistic is defined above using a distance $d(i,j)$, typically the 
+Euclidean distance. Here, it is perhaps unsuprising that the K-means algorithm
+has "better" performance than the GMM, as it explicity forms clusters based
+on respectively minimizing and maximizing intra- and inter-cluster Euclidean 
+distances.
 
 ```{r, cache=TRUE}
 sil_km <- cluster::silhouette(clusters(coexp_km), dist(tcounts(coexp_km)))
@@ -138,9 +214,20 @@ ggplot(sil_df_km) +
         axis.ticks.x=element_blank())
 ```
 
-Which clusters appear to be the best formed? Which are the fuzziest?
 
 ## Dunn index
+
+We next consider the Dunn index, which corresponds to the ratio of the smallest 
+distance between clusters and the largest intra-cluster distance (diameter).
+It is defined as follows:
+
+\[ \textsf{DI} = \frac{\min\limits_{C_I, C_J, I\ne J} \left( \min\limits_{i\in C_I, j \in C_J} d(i,j)\right)}{\max\limits_{C_M} \textsf{diam}(C_M)} \]
+where $\textsf{diam}(C_M)$ is the maximum distance among $i \in C_M$, $0 < \textsf{DI}$.
+
+**Higher values of DI represent better results**. Once again, the Euclidean 
+distance is used below.
+
+What do you notice?
 
 ```{r, cache=TRUE}
 coexp_gmm_dunn <- cluster.stats(d = dist(tcounts(coexp_gmm)), 
@@ -153,10 +240,44 @@ cat("DI (GMM) =", coexp_gmm_dunn, "\nDI (K-means) =", coexp_km_dunn, "\n")
 
 # Stability validation
 
+Another way to validate a clustering result is to examine its stability with
+respect to perturbations in the data -- the idea is that greater stability
+reflects a higher-confidence result. The `r CRANpkg("clValid")` and 
+`r CRANpkg("fpc")` packages offer several metrics for stability validation,
+respectively based on bootstrap resampling and removing each column of the data
+one-by-one.
+
+As in the previous section, we make
+use of the transformed normalized counts produced internally for clustering
+by `r Biocpkg("coseq")` via `tcounts(coexp_gmm)` rather than the raw counts. Both 
+methods considered here rerun the clustering algorithm for subsets of the data;
+to this end, we make use of interface functions provied directly
+by each package: respectively, `clMethods = c("model", kmeans")` and
+`clustermethod = c(noisemclustCB, kmeansCBI)`.
+
 ## `r CRANpkg("clValid")`: removing each column one by one
 
-Removing each column one by one + re-run clustering, several metrics
-GMM.
+To evaluate the stability of a clustering result, `r CRANpkg("clValid")`
+proposes the successive removal of each column in the input data. For each
+data subset, the clustering analysis is rerun, and several metrics are calculated
+(with averages taken over all deleted columns):
+
+- **Average proportion of non-overlap** (APN): measures the average proportion of 
+observations not placed in the same cluster under both cases
+- **Average distance** (AD): measures the average distance between 
+observations placed in the same cluster under both cases
+- **Average distance between means** (ADM): measures 
+the average distance between cluster centers for observations placed in the same 
+cluster under both cases
+- **Figure of merit** (FOM): measures the average intra-cluster variance 
+of the deleted column, where the clustering is based on the remaining 
+(undeleted) columns.
+
+Note that the APN, AD, and ADM are all based on the cross-classification table of the 
+original clustering with the clustering based on the removal of one column.
+**For all criteria, smaller values are better.**
+
+We first examine results for the GMM.
 
 ```{r, cache=TRUE}
 coexp_gmm_stability <- 
@@ -167,7 +288,7 @@ coexp_gmm_stability <-
 summary(coexp_gmm_stability)
 ```
 
-Same thing for K-means.
+We now examine results for the K-means algorithm.
 
 ```{r, cache=TRUE}
 coexp_km_stability <- 
@@ -178,16 +299,32 @@ coexp_km_stability <-
 summary(coexp_km_stability)
 ```
 
+What do you notice?
 
 ## `r CRANpkg("fpc")`: bootstrap resampling of data 
 
-Bootstrap resamples of data + calculate Jaccard index
-Generally, a valid, stable cluster should yield a mean Jaccard similarity 
-value of 0.75 or more. 
-=> Minimize clusterwise Jaccard bootstrap mean & number of dissolved clusters
-=> Maximize number of recovered clusters (close to B)
+To evaluate the stability of a clustering result, `r CRANpkg("fpc")` proposes
+the use of bootstrap resampling of the data.  For each of the $B$
+resampled data subsets, the clustering analysis is rerun and the Jaccard 
+similarity index is calculated with respect to the original clusters. The
+average clusterwise Jaccard bootstrap value can provide an indication 
+of the stability of specific clusters.
 
-GMM
+Generally, a valid, stable cluster should yield a mean Jaccard similarity 
+value of 0.75 or more, while values between 0.6 and 0.75 may be considered
+as indicative of patterns in the data. Values < 0.6 indicate clusters with low
+confidence. Jaccard similarity indices < 0.5 are considered to represent a "dissolved"
+cluster; "recovered" clusters represent those with high Jaccard similarity
+indices (although the specific threshold used in the package is not 
+indicated in the documentation).
+
+In general, **good performance is indicated by high average clusterwise 
+Jaccard bootstrap values, few dissolved clusters, and a number of recovered
+clusters as close to the number of bootstrap resamples $B$ as possible**.
+
+We first examine the GMM results. Notice that we use a small number of 
+bootstrap resamples here ($B$=20) to limit the computational time needed for
+this tutorial -- **in practice, a larger number (e.g., $B$=100) should be used.**   
 
 ```{r, cache=TRUE}
 coexp_gmm_boot <- 
@@ -197,7 +334,7 @@ coexp_gmm_boot <-
 print(coexp_gmm_boot)
 ```
 
-Same thing for K-means.
+We now examine the K-means results.
 
 ```{r, cache=TRUE}
 coexp_km_boot <- 
@@ -207,16 +344,42 @@ coexp_km_boot <-
 print(coexp_km_boot)
 ```
 
-
+What do you notice?
 
 # External validation
 
+External validation metrics seek to evaluate the ability of a clustering 
+algorithm to produce biologically meaningful clusters. For co-expression
+analyses, this meaningfulness is typically evaluated with respect to:
+
+- Gene ontology (GO) term annotations
+- A priori functional categorizations of genes
+- Pathway membership
+- Lists of genes of interest
+- ... or other relevant biological information
+
+For this section, we thus generally assume that we have a set of $F$ known 
+and potentially overlapping biological classes.
+
 ## Adjusted Rand Index
-Can be used to compare two partitions, or compare to known labels
+
+The adjusted Rand index (ARI) is used to compare two clustering partitions, or 
+to compare a clustering result to known labels. The ARI corresponds to a 
+corrected-for-chance version of the Rand index, and values close to 1 
+indicate high agreement between the two sets of labels. The ARI can be used
+here to compare the clusterings obtained between the GMM and K-means:
 
 ```{r, cache=TRUE}
 adjustedRandIndex(clusters(coexp_gmm), clusters(coexp_km))
 
+```
+
+As an illustration, we can also calculate the ARI between chromosomes and
+clustering labels. Here, the biological interest is perhaps limited, but
+confirms that there is no association between GMM or K-means clusters
+and chromosomes.
+
+```{r, cache=TRUE}
 chr_info <- rowData(dds)[match(rownames(coexp_gmm), 
                                rownames(rowData(dds))),"TXCHROM"]
 table(chr_info)
@@ -225,6 +388,21 @@ adjustedRandIndex(clusters(coexp_km), chr_info)
 ```
 
 ## BHI and BSI
+
+The `r CRANpkg("clValid")` package proposes two external validation measures:
+
+- **Biological homogeneity index** (BHI): measures the average proportion of 
+gene pairs that are clustered together which have matching biological functional classes
+- **Biological stability index** (BSI):  inspects the consistency of clustering for genes with similar biological functionality (similar to other stability measures, where each 
+sample is removed one at a time)
+
+For each of these measures, we can use the Mouse annotation package
+`r Biocpkg("org.Mm.eg.db")` from
+[Bioconductor](https://www.bioconductor.org/) to specify the Gene Ontology (GO)
+terms corresponding to the functional classes of genes. We focus in particular
+on the Biological Process (BP) ontology for this analysis.
+
+For each of these criteria, **values closer to 1 indicate better performance**.
 
 ```{r, cache=TRUE}
 coexp_gmm_bio <- clValid(as.matrix(tcounts(coexp_gmm)), 
@@ -252,8 +430,27 @@ optimalScores(coexp_km_bio)
 
 ```
 
+What do you observe?
 
 ## GO enrichment analysis
+
+The final assessment criterion we will examine concerns the *characterization*,
+rather than the *validation*, of clusters. Specifically, we seek to identify
+which biological processes (e.g., GO terms) appear to be enriched in
+clusters of interest. This is done using an enrichment analysis, where we
+seek to identify whether the proportion of genes annotated for a given 
+GO term in our cluster of interest is significantly different than the 
+proportion of annotated genes overall (i.e., the so-called *gene universe*). 
+In this example, we take as a gene universe the genes considered for the
+clustering analysis; it is debatable whether it should instead be defined
+as the set of expressed genes that were included in the initial differential
+analysis.
+
+Although more sophisticated tests do exist,
+most enrichment analyses are based on a Fisher's exact test. We make use of 
+the `r Biocpkg("clusterProfiler")` package, which interfaces nicely with
+visualization functions and Bioconductor annotation packages. As an example,
+we focus on cluster 10 from the GMM clustering result.
 
 ```{r, cache=TRUE}
 cl <- coexp_gmm
@@ -264,7 +461,7 @@ ego <- enrichGO(gene = rownames(cl)[which(clusters(cl) == kchoose)],
                 ont = "BP")
 ```
 
-```{r, fig.height = 10}
+```{r}
 dotplot(ego, showCategory=15)
 ```
 
@@ -273,17 +470,27 @@ dotplot(ego, showCategory=15)
 head(summary(ego))
 ```
 
-# Last remarks
-
-How to interpret measures of cluster validity? (compare to results 
-from different clusterings, or from random data)
-
 
 # Going further ...
 
-Create random data and compare results to those seen here ...
-Other clustering algorithms ...
-Consensus clusters ...
+There are many ways of performing clustering analysis and validating the
+resulting clusters. For many of the measures of cluster validity presented in
+this tutorial, values are to be interpreted relatively to compare between
+results (algoriths, numbers of clusters, etc), and an objective threshold
+establishing a "good" versus a "bad" clustering result (or individual cluster) 
+may not exist. 
+
+To go further, you could try the following:
+
+- Generate random data (or several random datasets), and evaluate the various validation criterion 
+presented in this tutorial. How do the values compare to those of the observed
+data? 
+- Consider one of the many other clustering algorithms available, and compare to
+the results shown for K-means and GMM: 
+hierarchical clustering , self-organizing maps (SOM), DIvisive ANAlysis (DIANA),
+partitioning around mediods (PAM), just to name a few...
+- Identify consensus clusters when varying the number of clusters or across
+different clustering algorithms, for example with `r Biocpkg("ConsensusClusterPlus")`.
 
 # Appendix: Creating initial data files
 
