@@ -2,7 +2,7 @@
 
 <img src="digitbio_logo.png" align="center" />
 
-[Unsupervised classification (clustering)](https://digitbio-ia.github.io/sequences/concepts/s2_clustering) is used in many fields. But once a clustering result has been obtained, how can we evaluate its pertinence? In this tutorial, we will work with several statistical and biological indices that can reinforce our confidence (or not...) in a clustering result. We will use as an example the identification of co-expressed genes from transcriptomic data with finite mixture models in [R](https://cran.r-project.org) 
+[Unsupervised classification (clustering)](https://digitbio-ia.github.io/sequences/concepts/s2_clustering) is used in many fields. But once a clustering result has been obtained, how can we evaluate its pertinence? In this tutorial, we will work with several statistical and biological indices that can reinforce our confidence (or not...) in a clustering result. We will use as an example the identification of co-expressed genes from transcriptomic data with finite mixture models in [R](https://cran.r-project.org). 
 
 This repo contains all materials for the tutorial. It is organized as follows:
 
