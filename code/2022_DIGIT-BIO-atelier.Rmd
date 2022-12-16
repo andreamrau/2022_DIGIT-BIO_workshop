@@ -10,6 +10,7 @@ output:
     toc: yes
 abstract: |
   [Unsupervised classification (clustering)](https://digitbio-ia.github.io/sequences/concepts/s2_clustering) is used in many fields. But once a clustering result has been obtained, how can we evaluate its pertinence? In this work, we will work with several statistical and biological indices to reinforce our confidence (or not...) in a clustering result. We will use as an example the identification of co-expressed genes from transcriptomic data with finite mixture models. 
+
 ---
 
 ```{r setup, include=FALSE}
@@ -17,13 +18,16 @@ knitr::opts_chunk$set(echo = TRUE)
 # knitr::purl("2022_DIGIT-BIO-atelier.Rmd")
 ```
 
+
+![](digitbio_logo.png)
+
 # Getting started
 
 We will first begin by installing the necessary packages for this tutorial:
 ```{r, eval = FALSE}
 install.packages("BiocManager")
-BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2",
-                       "coseq", "clusterProfiler", "org.Mm.eg.db"))
+BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2", "coseq",
+                        "clusterProfiler", "org.Mm.eg.db"))
 ```
 
 In some cases, installation of the `r Biocpkg("clusterProfiler")` package may cause
@@ -36,7 +40,11 @@ install.packages("remotes")
 remotes::install_github('YuLab-SMU/ggtree')
 ```
 
-Installation of all packages should take approximatey ~15 min.
+Installation of all packages should take approximately ~15 min. Some participants
+have experienced difficulties installing the `r Biocpkg("clusterProfiler")` and
+`r Biocpkg("org.Mm.eg.db")` packages; note that these two packages are only
+used in the final section on external validation, and the remainder of the 
+tutorial can be run without them.
 
 # Load packages and pre-formatted results
 
@@ -48,6 +56,7 @@ library(fpc)              ## Package with several validation criteria
 library(mclust)           ## Package to fit Gaussian mixture models
 library(coseq)            ## Co-expression analyses
 library(ggplot2)          ## Plotting 
+
 library(clusterProfiler)  ## GO enrichment analysis
 library(org.Mm.eg.db)     ## Mouse annotation
 ```
@@ -83,48 +92,90 @@ We will examine a variety of cluster validation metrics on these two clustering
 results in the following tutorial. Note that code to regenerate these results 
 can be found in the Appendix. For the purposes of this tutorial, all necessary 
 pre-processed data files can be found on the associated 
-[GitHub repo](https://github.com/andreamrau/2022_DIGIT-BIO_workshop) and can be 
-downloaded as follows:
+[GitHub repo](https://github.com/andreamrau/2022_DIGIT-BIO_workshop).
 
-```{r, eval=FALSE}
-for(i in c("Fu-GSE60450_dds.rds", "coexp_gmm.rds", "coexp_km.rds")) {
-  FileURL <- paste0("https://github.com/andreamrau/",
-                    "2022_DIGIT-BIO_workshop/tree/main/data/", i)
-  download.file(FileURL, i)
-}
-```
+To download the tutorial materials, you can navigate to the 
+[GitHub repo](https://github.com/andreamrau/2022_DIGIT-BIO_workshop) and click
+on the green `Code` button to download a zipped file, as shown in the
+screenshot below.
+
+![](github_screenshot.png)
+
+After unzipping the file, the data files can be found in the `2022_DIGIT-BIO_workshop-main/data/` folder, and R/Rmarkdown scripts in the
+`2022_DIGIT-BIO_workshop-main/code/` folder. For interactively rerunning
+the scripts in this tutorial, you can open the `2022_DIGIT-BIO-atelier.R`
+file in R or RStudio. For the remainder, make sure that your current working
+directory is in your `2022_DIGIT-BIO_workshop-main/code/` folder by using 
+the `getwd()` command to see your current working directory, and as needed
+`setwd(...)` to change it.
+
+The files we will use in this tutorial are in `.rds` format, which is used
+to write a single `R` object to a file enabling it to be easily restored. We
+have used this format here since output from `r Biocpkg("coseq")` is not in 
+simple tabular format, as it includes meta-data such as posterior probabilities
+of cluster membership, model selection criteria values, input data, etc.
 
 We then load these results below, and set the seed for the random number 
 generator to ensure reproducible results:
 
 ```{r}
-dds <- readRDS("Fu-GSE60450_dds.rds")
-coexp_gmm <- readRDS("coexp_gmm.rds")
-coexp_km <- readRDS("coexp_km.rds")
+dds <- readRDS("../data/Fu-GSE60450_dds.rds")
+coexp_gmm <- readRDS("../data/coexp_gmm.rds")
+coexp_km <- readRDS("../data/coexp_km.rds")
 set.seed(12345)
 ```
 
+The data input into each of the clustering algorithms is a square table
+of transformed normalized profile values,
+with $n$=2317 genes in rows and $p$=12 samples in columns:
+
+```{r}
+tcounts(coexp_gmm)
+```
+
+We have clustered rows of this data table to identify genes with similar expression patterns across the 12 experimental samples.
+Note that the clustering algorithms here do not make use of the sample labels 
+(e.g., cell type, status). However, we will visualize the identified clusters
+with respect to these labels in the graphics in the following section.
 
 # Examine `r Biocpkg("coseq")` clustering results
 
 We first briefly examine the results for the two
-`r Biocpkg("coseq")` clustering results. We start with the GMM results,
-and examine boxplots of the co-expression clusters (with results 
-aggegated by status group in the visualization) as well as the conditional 
-probabilities of cluster membership for each cluster. Note that clusters that
+`r Biocpkg("coseq")` clusterings. We start with the GMM results,
+and examine boxplots of the co-expression clusters. In the boxplots below, each
+facet represents an identified cluster, and boxplots for each of the 12
+samples represent the respective normalized profile values for genes assigned
+to that cluster.
+
+```{r}
+coexp_gmm
+plot(coexp_gmm, conds = dds$Status, graph = "boxplots")
+```
+
+To better visualize the cluster-specific patterns of expression with respect
+to status, we can represent these same clusters by summing normalized
+profile values by status group for each gene.
+
+```{r}
+plot(coexp_gmm, conds = dds$Status,
+     collapse_reps = "average", graph = "boxplots")
+```
+
+Finally, we can consider the conditional probabilities of cluster membership
+for each cluster.
+
+
+```{r}
+plot(coexp_gmm, graphs = "probapost_boxplots")
+```
+
+Note that clusters that
 have very sharp, marked profiles (e.g. Cluster 10) tend to include genes
 with higher conditional probabilities. Genes assigned to clusters with less
 marked profiles (e.g., Cluster 1 or 3) likely have a more ambiguous 
 clustering assignment, which is reflected by the larger range of values for
 the respective conditional probabilities.
 
-
-```{r}
-coexp_gmm
-plot(coexp_gmm, conds = dds$Status,
-     collapse_reps = "average", graph = "boxplots")
-plot(coexp_gmm, graphs = "probapost_boxplots")
-```
 
 We similarly examine results from the K-means algorithm. Note that clustering
 labels are arbitrary, so Cluster 1 from the GMM does not have any link to

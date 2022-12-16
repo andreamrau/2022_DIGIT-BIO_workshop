@@ -1,59 +1,63 @@
-## ----setup, include=FALSE------------------------------------
+## ----setup, include=FALSE-------------
 knitr::opts_chunk$set(echo = TRUE)
 # knitr::purl("2022_DIGIT-BIO-atelier.Rmd")
 
 
-## ---- eval = FALSE-------------------------------------------
+## ---- eval = FALSE--------------------
 ## install.packages("BiocManager")
-## BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2",
-##                        "coseq", "clusterProfiler", "org.Mm.eg.db"))
+## BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2", "coseq",
+##                         "clusterProfiler", "org.Mm.eg.db"))
 
 
-## ---- eval=FALSE---------------------------------------------
+## ---- eval=FALSE----------------------
 ## install.packages("remotes")
 ## remotes::install_github('YuLab-SMU/ggtree')
 
 
-## ---- warning=FALSE, message=FALSE---------------------------
+## ---- warning=FALSE, message=FALSE----
 library(clValid)          ## Package with several validation criteria
 library(fpc)              ## Package with several validation criteria
 library(mclust)           ## Package to fit Gaussian mixture models
 library(coseq)            ## Co-expression analyses
 library(ggplot2)          ## Plotting 
+
 library(clusterProfiler)  ## GO enrichment analysis
 library(org.Mm.eg.db)     ## Mouse annotation
 
 
-## ---- eval=FALSE---------------------------------------------
-## for(i in c("Fu-GSE60450_dds.rds", "coexp_gmm.rds", "coexp_km.rds")) {
-##   FileURL <- paste0("https://github.com/andreamrau/",
-##                     "2022_DIGIT-BIO_workshop/tree/main/data/", i)
-##   download.file(FileURL, i)
-## }
-
-
-## ------------------------------------------------------------
-dds <- readRDS("Fu-GSE60450_dds.rds")
-coexp_gmm <- readRDS("coexp_gmm.rds")
-coexp_km <- readRDS("coexp_km.rds")
+## -------------------------------------
+dds <- readRDS("../data/Fu-GSE60450_dds.rds")
+coexp_gmm <- readRDS("../data/coexp_gmm.rds")
+coexp_km <- readRDS("../data/coexp_km.rds")
 set.seed(12345)
 
 
-## ------------------------------------------------------------
+## -------------------------------------
+tcounts(coexp_gmm)
+
+
+## -------------------------------------
 coexp_gmm
+plot(coexp_gmm, conds = dds$Status, graph = "boxplots")
+
+
+## -------------------------------------
 plot(coexp_gmm, conds = dds$Status,
      collapse_reps = "average", graph = "boxplots")
+
+
+## -------------------------------------
 plot(coexp_gmm, graphs = "probapost_boxplots")
 
 
-## ------------------------------------------------------------
+## -------------------------------------
 coexp_km
 plot(coexp_km, conds = dds$Status,
      collapse_reps = "average", graph = "boxplots")
 plot(coexp_km, graphs = "probapost_boxplots")
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 sil_gmm <- cluster::silhouette(clusters(coexp_gmm), dist(tcounts(coexp_gmm)))
 summary(sil_gmm)
 sil_df_gmm <- data.frame(as(sil_gmm, "matrix"))
@@ -68,7 +72,7 @@ ggplot(sil_df_gmm) +
         axis.ticks.x=element_blank())
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 sil_km <- cluster::silhouette(clusters(coexp_km), dist(tcounts(coexp_km)))
 summary(sil_km)
 sil_df_km <- data.frame(as(sil_km, "matrix"))
@@ -83,7 +87,7 @@ ggplot(sil_df_km) +
         axis.ticks.x=element_blank())
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 coexp_gmm_dunn <- cluster.stats(d = dist(tcounts(coexp_gmm)), 
                              clusters(coexp_gmm))$dunn
 coexp_km_dunn <- cluster.stats(d = dist(tcounts(coexp_km)), 
@@ -91,7 +95,7 @@ coexp_km_dunn <- cluster.stats(d = dist(tcounts(coexp_km)),
 cat("DI (GMM) =", coexp_gmm_dunn, "\nDI (K-means) =", coexp_km_dunn, "\n")
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 coexp_gmm_stability <- 
   clValid(as.matrix(tcounts(coexp_gmm)), 
           nClust=max(clusters(coexp_gmm)), maxitems = nrow(coexp_gmm),
@@ -100,7 +104,7 @@ coexp_gmm_stability <-
 summary(coexp_gmm_stability)
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 coexp_km_stability <- 
   clValid(as.matrix(tcounts(coexp_km)), 
           nClust=max(clusters(coexp_km)), maxitems = nrow(coexp_km),
@@ -109,7 +113,7 @@ coexp_km_stability <-
 summary(coexp_km_stability)
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 coexp_gmm_boot <- 
   clusterboot(tcounts(coexp_gmm), B=20, k=max(clusters(coexp_gmm)), 
               seed=20,bootmethod="boot",
@@ -117,7 +121,7 @@ coexp_gmm_boot <-
 print(coexp_gmm_boot)
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 coexp_km_boot <- 
   clusterboot(tcounts(coexp_km), B=20, k=max(clusters(coexp_km)), 
               seed=20,bootmethod="boot",
@@ -125,12 +129,12 @@ coexp_km_boot <-
 print(coexp_km_boot)
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 adjustedRandIndex(clusters(coexp_gmm), clusters(coexp_km))
 
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 chr_info <- rowData(dds)[match(rownames(coexp_gmm), 
                                rownames(rowData(dds))),"TXCHROM"]
 table(chr_info)
@@ -138,7 +142,7 @@ adjustedRandIndex(clusters(coexp_gmm), chr_info)
 adjustedRandIndex(clusters(coexp_km), chr_info)
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 coexp_gmm_bio <- clValid(as.matrix(tcounts(coexp_gmm)), 
                         nClust = max(clusters(coexp_gmm)),
                         maxitems = nrow(coexp_gmm),
@@ -148,7 +152,7 @@ coexp_gmm_bio <- clValid(as.matrix(tcounts(coexp_gmm)),
                         GOcategory = "BP")
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 coexp_km_bio <- clValid(as.matrix(tcounts(coexp_km)), 
                        nClust = max(clusters(coexp_km)),
                        maxitems = nrow(coexp_km),
@@ -158,13 +162,13 @@ coexp_km_bio <- clValid(as.matrix(tcounts(coexp_km)),
                        GOcategory = "BP")
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 optimalScores(coexp_gmm_bio)
 optimalScores(coexp_km_bio)
 
 
 
-## ---- cache=TRUE---------------------------------------------
+## ---- cache=TRUE----------------------
 cl <- coexp_gmm
 kchoose <- 10
 ego <- enrichGO(gene = rownames(cl)[which(clusters(cl) == kchoose)],
@@ -173,15 +177,15 @@ ego <- enrichGO(gene = rownames(cl)[which(clusters(cl) == kchoose)],
                 ont = "BP")
 
 
-## ------------------------------------------------------------
+## -------------------------------------
 dotplot(ego, showCategory=15)
 
 
-## ---- warning=FALSE------------------------------------------
+## ---- warning=FALSE-------------------
 head(summary(ego))
 
 
-## ---- eval=FALSE---------------------------------------------
+## ---- eval=FALSE----------------------
 ## library(RnaSeqGeneEdgeRQL)
 ## library(DESeq2)
 ## library(Mus.musculus)
@@ -260,6 +264,6 @@ head(summary(ego))
 ## saveRDS(coexp_km, file = "coexp_km.rds")
 
 
-## ----sessionInfo, echo=FALSE---------------------------------
+## ----sessionInfo, echo=FALSE----------
 sessionInfo()
 
