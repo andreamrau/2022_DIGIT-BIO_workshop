@@ -23,7 +23,7 @@ BiocManager::install(c("mclust", "clValid", "fpc", "ggplot2",
 ```
 
 In some cases, installation of the `clusterProfiler` package may cause
-errors due to a dependence on the `ggtree` package (see [here](https://github.com/YuLab-SMU/ggtree/issues/544). 
+errors due to a dependence on the `ggtree` package (see [here](https://github.com/YuLab-SMU/ggtree/issues/544)). 
 In this case, you can try
 using the following code to install the development version of `ggtree`
 before installing the remaining packages as described above.
